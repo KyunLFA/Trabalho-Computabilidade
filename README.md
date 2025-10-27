@@ -1,2 +1,2 @@
 # Trabalho-Computabilidade
-Trabalha para disciplina de Computabilidade da Unisc
+Trabalho para disciplina de Computabilidade da Unisc
