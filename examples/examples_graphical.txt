@@ -1,0 +1,64 @@
+        . - - - - .
+      /             \
+     /               \
+    /                 \
+   |         q         |<----entrada (ab por exemplo)
+    \                 /
+     \               /------
+      \             /      |(a, ε, ε)
+       ` - - - - - ' <------
+             |
+             |(b, ?, ?)
+             |
+             V
+        . - - - - .
+      /             \
+     /   . - - - .   \
+    /   /         \   \
+   |   |     r     |   |
+    \   \         /   /
+     \   ` - - - '   /
+      \             /
+        ` - - - - '
+
+Acima é um autômato simples que reconhece uma quantidade infinita de "a" seguido
+de um ou mais "b" no final e qualquer coisa a mais (não usa a pilha)
+_____________________________________________________________________________________
+        . - - - - .
+      /             \
+     /               \
+    /                 \
+   |         q         |<----entrada (ab)
+    \                 /
+     \               /------
+      \             /      |(a, ε, B)
+       ` - - - - - ' <------
+             |
+             |(b, B, B)
+             |
+             V
+        . - - - - .
+      /             \
+     /               \
+    /                 \
+   |         r         |
+    \                 /
+     \               /------
+      \             /      |(b, B, ε)
+       ` - - - - - ' <------
+             |
+             |(?, ?, ε)
+             |
+             v
+        . - - - - .
+      /             \
+     /   . - - - .   \
+    /   /         \   \
+   |   |     s     |   |
+    \   \         /   /
+     \   ` - - - '   /
+      \             /
+        ` - - - - '
+
+Acima é um autômato que reconhece uma quantidade infinita de "a" contanto que seja seguido
+pela mesma quantidade de "b" após e sem nenhum caracter a mais.

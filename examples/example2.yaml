@@ -1,0 +1,79 @@
+# example2.yaml
+# autõmato que aceita a^n b^n, n≥1
+automaton_type: pda
+states:
+  - q_push
+  - q_pop
+  - p_final
+  - trap
+input_alphabet:
+  - a
+  - b
+stack_alphabet:
+  - Z0
+  - A
+initial_state: q_push
+initial_stack_symbol: Z0
+final_states:
+  - p_final
+
+# Transições: (from, to, read, pop, push)
+# Notação:
+#  - 'ε' = nenhuma ação (não consome / não pop / não push)
+#  - '?' = teste de vazio
+transitions:
+  # --------- Fase de push: empilha A ao ler 'a' ----------
+  - from: q_push
+    to: q_push
+    read: "a"
+    pop: "Z0"
+    push: ["A","Z0"]      # (a, Z0 -> A Z0)
+
+  - from: q_push
+    to: q_push
+    read: "a"
+    pop: "A"
+    push: ["A","A"]       # (a, A -> A A)
+
+  # --------- Ao ver o primeiro 'b' muda para fase pop (consome um A) ----------
+  - from: q_push
+    to: q_pop
+    read: "b"
+    pop: "A"
+    push: []              # (b, A -> ε)
+
+  # --------- Fase de pop: continua desempilhando A enquanto lê 'b' ----------
+  - from: q_pop
+    to: q_pop
+    read: "b"
+    pop: "A"
+    push: []              # (b, A -> ε)
+
+  # --------- Aceitação: fita vazia e pilha sem A (teste de vazio) ----------
+  # leitura = '?'  -> fita está vazia
+  # pop    = '?'  -> pilha "vazia de A" (apenas Z0 permanece)
+  - from: q_pop
+    to: p_final
+    read: "?"
+    pop: "?"
+    push: []
+
+  # --------- Transições para trap (leituras inválidas) ----------
+  # ler 'a' durante q_pop é inválido (impede aceitar 'abab')
+  - from: q_pop
+    to: trap
+    read: "a"
+    pop: "ε"
+    push: []
+
+  - from: trap
+    to: trap
+    read: "a"
+    pop: "ε"
+    push: []
+
+  - from: trap
+    to: trap
+    read: "b"
+    pop: "ε"
+    push: []
