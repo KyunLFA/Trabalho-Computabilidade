@@ -42,3 +42,5 @@ Modo interativo (comece aqui!):
 ``
 python -m pda_sim.cli interactive
 ``
+
+Para rodar o programa é necessário instalar python e pip, e usar ``pip install -r requirements.txt``
