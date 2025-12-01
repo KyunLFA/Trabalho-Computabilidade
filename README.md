@@ -11,19 +11,25 @@ as transições entre os estados.
 Funcionalidades do CLI
 
 Desenhar
+
 Desenha o autômato em ASCII com base em um arquivo YAML.
-``bash
+
+``
 python -m pda_sim.cli draw --file examples/exemplo1.yaml
-``bash
+``
 
-run
+Rodar
+
 Executa o autômato sobre uma entrada fornecida.
-``bash
-python -m pda_sim.cli run --file examples/exemplo1.yaml --input "abba"
-``bash
 
-validate
+``
+python -m pda_sim.cli run --file examples/exemplo1.yaml --input "abba"
+``
+
+Validar
+
 Verifica se o arquivo YAML respeita a estrutura esperada.
-``bash
+
+``
 python -m pda_sim.cli validate --file automato.yaml
-``bash
+``
