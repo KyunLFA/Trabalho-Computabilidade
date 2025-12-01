@@ -4,7 +4,7 @@ Este módulo fornece a interface de terminal do simulador de Autômatos com Pilh
 Ele organiza a execução do programa, conecta os componentes internos e oferece três
 operações principais ao usuário final.
 
-## 📌 Funcionalidades do CLI
+ Funcionalidades do CLI
 
 ### `draw`
 Desenha o autômato em ASCII com base em um arquivo YAML.
