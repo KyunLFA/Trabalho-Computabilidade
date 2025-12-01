@@ -1,5 +1,5 @@
 def render_config(config):
-    stack_str = " ".join(config.stack.items[::-1]) if config.stack.items else "ε"
+    stack_str = " ".join(config.stack.items()[::-1]) if config.stack.items() else "ε"
     inp = "".join(config.remaining_input) if config.remaining_input else "ε"
 
     return (
@@ -10,8 +10,7 @@ def render_config(config):
 
 
 def render_step_list(configs):
-    out = []
-    out.append("============================================")
+    out = ["============================================"]
 
     if len(configs) == 1:
         out.append(render_config(configs[0]))

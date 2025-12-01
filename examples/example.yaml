@@ -1,0 +1,45 @@
+# Autômato de Pilha para reconhecer a linguagem a^n b^n (n ≥ 1)
+# Aceita strings como: ab, aabb, aaabbb, etc.
+# Rejeita: a, b, aab, abb, ba, etc.
+
+states: [q0, q1, q2, q3]
+input_alphabet: [a, b]
+stack_alphabet: [Z0, A]
+initial_state: q0
+initial_stack: [Z0]
+final_states: [q3]
+
+transitions:
+  # Estado q0: empilhar A para cada 'a' lido
+  - from: q0
+    to: q0
+    read: a
+    pop: Z0
+    push: [A, Z0]
+
+  - from: q0
+    to: q0
+    read: a
+    pop: A
+    push: [A, A]
+
+  # Transição para começar a ler b's
+  - from: q0
+    to: q1
+    read: b
+    pop: A
+    push: []
+
+  # Estado q1: desempilhar A para cada 'b' lido
+  - from: q1
+    to: q1
+    read: b
+    pop: A
+    push: []
+
+  # Quando encontrar Z0 no topo, aceitar (significa que contamos todos os a's e b's)
+  - from: q1
+    to: q3
+    read: ε
+    pop: Z0
+    push: [Z0]
