@@ -79,6 +79,8 @@ def _is_transition_applicable(
     if transition.read == 'ε':
         # Transição epsilon não consome entrada (sempre OK quanto à entrada)
         pass
+    elif transition.read == '?' and current_input is None:
+        pass
     elif current_input is None:
         # Transição requer leitura mas não há entrada
         return False
@@ -89,6 +91,8 @@ def _is_transition_applicable(
     # Verificar topo da pilha
     if transition.pop == 'ε':
         # Transição não requer pop (sempre OK quanto à pilha)
+        pass
+    elif transition.pop == '?' and stack_top is None:
         pass
     elif stack_top is None:
         # Transição requer pop mas pilha está vazia
@@ -117,7 +121,7 @@ def _apply_transition(config: PDAConfig, transition: Transition) -> PDAConfig:
     new_config.state = transition.to_state
 
     # Consumir entrada se necessário
-    if transition.read != 'ε':
+    if not transition.read in ['ε', '?']:
         new_config.consume_input()
 
     # Fazer pop da pilha se necessário
@@ -131,8 +135,8 @@ def _apply_transition(config: PDAConfig, transition: Transition) -> PDAConfig:
         new_config.stack.push(transition.push)
 
     # Adicionar ao histórico
-    read_str = transition.read if transition.read != 'ε' else 'ε'
-    pop_str = transition.pop if transition.pop != 'ε' else 'ε'
+    read_str = transition.read
+    pop_str = transition.pop
     push_str = ','.join(transition.push) if transition.push else 'ε'
 
     history_entry = (
