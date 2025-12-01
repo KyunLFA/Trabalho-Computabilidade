@@ -70,7 +70,6 @@ def load_from_yaml(path: str) -> Automaton:
     input_alphabet: [a, b]
     stack_alphabet: [Z, X]
     initial_state: q0
-    initial_stack: [Z]  # opcional
     final_states: [q2]
     transitions:
       - from: q0
@@ -121,7 +120,6 @@ def load_from_json(path: str) -> Automaton:
       "input_alphabet": ["a", "b"],
       "stack_alphabet": ["Z", "X"],
       "initial_state": "q0",
-      "initial_stack": ["Z"],
       "final_states": ["q2"],
       "transitions": [
         {
@@ -165,7 +163,6 @@ def load_from_ascii(path: str) -> Automaton:
     INPUT: a, b
     STACK: Z, X
     INITIAL: q0
-    INITIAL_STACK: Z  # opcional
     FINAL: q2
 
     # Transições (uma por linha)
@@ -266,9 +263,9 @@ def load_from_ascii(path: str) -> Automaton:
                 param_value = param_value.strip()
 
                 if param_key == 'read':
-                    trans_data['read'] = param_value if param_value != 'ε' else 'ε'
+                    trans_data['read'] = param_value
                 elif param_key == 'pop':
-                    trans_data['pop'] = param_value if param_value != 'ε' else 'ε'
+                    trans_data['pop'] = param_value
                 elif param_key == 'push':
                     if param_value == 'ε' or not param_value:
                         trans_data['push'] = []
@@ -387,8 +384,8 @@ def load_from_csv(path: str) -> Automaton:
         trans_data = {
             'from': from_state,
             'to': to_state,
-            'read': read if read != 'ε' else 'ε',
-            'pop': pop if pop != 'ε' else 'ε',
+            'read': read,
+            'pop': pop,
             'push': list(push) if push and push != 'ε' else []
         }
 
@@ -509,13 +506,13 @@ def _add_transition_from_dict(
         raise AutomatonLoadError(f"estado destino '{to_state}' desconhecido")
 
     # Validar símbolo de leitura
-    if read != 'ε' and read not in automaton.input_alphabet:
+    if not read in ['ε', '?'] and read not in automaton.input_alphabet:
         raise AutomatonLoadError(
             f"símbolo de entrada '{read}' não está no alfabeto"
         )
 
     # Validar símbolo de pop
-    if pop != 'ε' and pop not in automaton.stack_alphabet:
+    if not pop in ['ε', '?'] and pop not in automaton.stack_alphabet:
         raise AutomatonLoadError(
             f"símbolo de pilha '{pop}' não está no alfabeto de pilha"
         )
