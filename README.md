@@ -14,8 +14,11 @@ Desenhar
 
 Desenha o autômato em ASCII com base em um arquivo YAML.
 
+Para testar, instale as depenências no requirements.txt,
+entre no src/ e algum dos comandos seguintes:
+
 ``
-python -m pda_sim.cli draw --file examples/exemplo1.yaml
+python -m pda_sim.cli draw --file ../examples/example1.yaml
 ``
 
 Rodar
@@ -23,7 +26,7 @@ Rodar
 Executa o autômato sobre uma entrada fornecida.
 
 ``
-python -m pda_sim.cli run --file examples/exemplo1.yaml --input "abba" --mode auto
+python -m pda_sim.cli run --file ../examples/example2.yaml --input "abba" --mode auto
 ``
 
 Validar
@@ -34,7 +37,8 @@ Verifica se o arquivo YAML respeita a estrutura esperada.
 python -m pda_sim.cli validate --file automato.yaml
 ``
 
-Modo interativo
+Modo interativo (comece aqui!):
+
 ``
 python -m pda_sim.cli interactive
 ``
