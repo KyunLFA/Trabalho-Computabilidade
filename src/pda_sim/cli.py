@@ -1,8 +1,9 @@
 import argparse
-from pda_sim.config.loader import load_automaton
-from pda_sim.core.simulator import stepwise_run
-from pda_sim.render.ascii_renderer import render_automaton
-from pda_sim.render.step_view import render_step_list
+
+from .config.loader import load_automaton
+from .core.simulator import stepwise_run
+from .render.ascii_renderer import render_automaton
+from .render.step_view import render_step_list
 
 def main():
     parser = argparse.ArgumentParser(description="Simulador de PDA")
