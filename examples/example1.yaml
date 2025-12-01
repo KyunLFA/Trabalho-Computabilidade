@@ -1,55 +1,33 @@
 # example1.yaml
 # automato que aceita a* b+
 automaton_type: dfa
-states:
-  - q0
-  - q1
-  - trap
-input_alphabet:
-  - a
-  - b
-stack_alphabet: []          # nenhum símbolo de pilha (não usado)
+states: [q0, q1, q2]
+input_alphabet: [a, b]
+stack_alphabet: []
 initial_state: q0
-final_states:
-  - q1
+final_states: [q2]
 
-# Transições: (from, to, read, pop, push)
-# Notação: 'ε' = nenhuma ação (nenhum pop/push), '?' não é usado aqui
 transitions:
   - from: q0
     to: q0
-    read: "a"
-    pop: "ε"
+    read: a
+    pop: ε
     push: []
 
   - from: q0
     to: q1
-    read: "b"
-    pop: "ε"
+    read: b
+    pop: ε
     push: []
 
   - from: q1
     to: q1
-    read: "b"
-    pop: "ε"
+    read: b
+    pop: ε
     push: []
 
-  # Bloqueia 'a' após o primeiro 'b' (vai para trap)
   - from: q1
-    to: trap
-    read: "a"
-    pop: "ε"
-    push: []
-
-  # trap loops (qualquer símbolo permanece em trap)
-  - from: trap
-    to: trap
-    read: "a"
-    pop: "ε"
-    push: []
-
-  - from: trap
-    to: trap
-    read: "b"
-    pop: "ε"
+    to: q2
+    read: ε
+    pop: ε
     push: []

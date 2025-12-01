@@ -1,57 +1,27 @@
 from dataclasses import dataclass, field
+from typing import Tuple, List, Set
 
 @dataclass
 class Transition:
-    """Representa uma transição de um autômato de pilha (PDA)."""
     from_state: str
     to_state: str
-    read: str              # símbolo da entrada ou epsilon
-    pop: str               # topo esperado da pilha (ou ε)
-    push: tuple[str, ...]  # sequência a empilhar (vazia = ε)
+    read: str              # symbol, 'ε' or '?'
+    pop: str               # symbol, 'ε' or '?'
+    push: Tuple[str, ...]  # tuple empty means ε
 
 @dataclass
 class Automaton:
-    """Representa um autômato de pilha (PDA)."""
-    states: set[str]
-    input_alphabet: set[str]
-    stack_alphabet: set[str]
+    states: Set[str]
+    input_alphabet: Set[str]
+    stack_alphabet: Set[str]
     initial_state: str
-    final_states: set[str]
-    transitions: list[Transition] = field(default_factory=list)
+    final_states: Set[str]
+    transitions: List[Transition] = field(default_factory=list)
+    initial_stack_symbol: str = None
+    automaton_type: str = "pda"   # "pda" or "dfa"
 
-    def add_transition(
-        self,
-        from_state: str,
-        to_state: str,
-        read: str,
-        pop: str,
-        push: tuple[str, ...]
-    ) -> None:
-        """Adiciona uma transição ao autômato.
-        
-        Args:
-            from_state: Estado de origem
-            to_state: Estado de destino
-            read: Símbolo lido da entrada (ou 'ε')
-            pop: Símbolo esperado no topo da pilha (ou 'ε')
-            push: Tupla de símbolos a empilhar (tupla vazia para ε)
-        """
-        transition = Transition(
-            from_state=from_state,
-            to_state=to_state,
-            read=read,
-            pop=pop,
-            push=push
-        )
-        self.transitions.append(transition)
+    def add_transition(self, from_state: str, to_state: str, read: str, pop: str, push: Tuple[str, ...]):
+        self.transitions.append(Transition(from_state, to_state, read, pop, push))
 
-    def get_transitions_from(self, state: str) -> list[Transition]:
-        """Retorna todas as transições que partem de um dado estado.
-        
-        Args:
-            state: Estado de origem
-            
-        Returns:
-            Lista de transições que partem do estado especificado
-        """
+    def get_transitions_from(self, state: str):
         return [t for t in self.transitions if t.from_state == state]

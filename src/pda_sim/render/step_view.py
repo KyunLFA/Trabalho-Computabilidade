@@ -1,24 +1,19 @@
-def render_config(config):
-    stack_str = " ".join(config.stack.items()[::-1]) if config.stack.items() else "ε"
-    inp = "".join(config.remaining_input) if config.remaining_input else "ε"
+from rich import print as rprint
+from rich.table import Table
 
-    return (
-        f"Estado: {config.state}\n"
-        f"Entrada restante: {inp}\n"
-        f"Pilha (topo à direita): {stack_str}\n"
-    )
-
+def render_config(cfg):
+    stack_items = cfg.stack.items()
+    stack_repr = "ε" if not stack_items else ",".join(stack_items)
+    inp = "".join(cfg.remaining_input) if cfg.remaining_input else "ε"
+    return f"Estado: {cfg.state}\nEntrada restante: {inp}\nPilha (fundo->topo): {stack_repr}\n"
 
 def render_step_list(configs):
-    out = ["============================================"]
-
+    out = ["="*50]
     if len(configs) == 1:
         out.append(render_config(configs[0]))
     else:
-        for i, cfg in enumerate(configs):
-            out.append(f"--- Configuração {i+1} ---")
-            out.append(render_config(cfg))
-
-    out.append("============================================")
+        for i,c in enumerate(configs,1):
+            out.append(f"--- Config {i} ---")
+            out.append(render_config(c))
+    out.append("="*50)
     return "\n".join(out)
-

@@ -1,372 +1,300 @@
-"""Simulador de autômato de pilha (PDA) com suporte a não-determinismo.
-
-Este módulo implementa a lógica central de simulação, incluindo:
-- Aplicação de transições individuais
-- Execução passo-a-passo com frontier de configurações
-- Verificação de aceitação com trace de execução
-"""
-
-from typing import Iterator, Optional
+# src/pda_sim/core/simulator.py
+from typing import List, Optional, Tuple, Iterator, Dict
 from .config import PDAConfig
 from .stack import Stack
 from .automaton import Automaton, Transition
+import random
+import copy
 
+DEFAULT_MAX_STEPS = 5000
+DEFAULT_MAX_CONFIGS = 2000
+# quantas vezes a mesma configuração (assinatura) pode reaparecer antes de ser bloqueada
+DEFAULT_MAX_VISITS_PER_SIGNATURE = 50
 
-# Limites de segurança para evitar explosão do espaço de busca
-DEFAULT_MAX_STEPS = 1000
-DEFAULT_MAX_CONFIGS = 500
+def _signature_of_config(cfg: PDAConfig) -> Tuple[str, Tuple[str,...], Tuple[str,...]]:
+    return (cfg.state, tuple(cfg.remaining_input), tuple(cfg.stack.items()))
 
-
-def simulate_step(config: PDAConfig, automaton: Automaton) -> list[PDAConfig]:
-    """Aplica todas as transições aplicáveis a partir de uma configuração.
-
-    Retorna uma lista de novas configurações (possivelmente vazia se nenhuma
-    transição for aplicável). Suporta não-determinismo retornando múltiplas
-    configurações quando múltiplas transições são aplicáveis.
-
-    Args:
-        config: Configuração atual da execução
-        automaton: Autômato sendo simulado
-
-    Returns:
-        Lista de novas configurações resultantes das transições aplicáveis.
-        Lista vazia se nenhuma transição puder ser aplicada.
+def _is_transition_applicable(transition: Transition, cfg: PDAConfig, automaton: Automaton) -> bool:
     """
-    next_configs = []
-    current_input_symbol = config.get_current_input_symbol()
+    Checa se a transição é aplicável à configuração corrente (apenas leitura de guardas,
+    sem efetuar pop/push). Esta função considera corretamente 'ε' e '?'.
+    """
+    current = cfg.get_current_input_symbol()  # None if empty
+    if transition.read == 'ε':
+        read_ok = True
+    elif transition.read == '?':
+        read_ok = cfg.is_input_empty()
+    else:
+        read_ok = (current == transition.read)
 
-    # Obter topo da pilha (ou None se vazia)
+    if not read_ok:
+        return False
+
     try:
-        stack_top = config.stack.peek()
-    except IndexError:
-        stack_top = None
+        top = cfg.stack.peek()
+    except Exception:
+        top = None
 
-    # Buscar todas as transições do estado atual
-    transitions = automaton.get_transitions_from(config.state)
+    if transition.pop == 'ε':
+        pop_ok = True
+    elif transition.pop == '?':
+        if cfg.stack.is_empty():
+            pop_ok = True
+        elif automaton.initial_stack_symbol is None:
+            pop_ok = False
+        else:
+            pop_ok = (len(cfg.stack) == 1 and cfg.stack.peek() == automaton.initial_stack_symbol)
+    else:
+        pop_ok = (top == transition.pop)
 
-    for transition in transitions:
-        # Verificar se a transição é aplicável
-        if not _is_transition_applicable(
-                transition,
-                current_input_symbol,
-                stack_top
-        ):
+    return pop_ok
+
+def _apply_transition(cfg: PDAConfig, transition: Transition) -> PDAConfig:
+    """
+    Aplica a transição e retorna uma nova configuração (cópia).
+    Trata corretamente semantica read='ε'/'?' e pop='ε'/'?'.
+    """
+    new_cfg = cfg.copy()
+    new_cfg.state = transition.to_state
+
+    if transition.read not in ('ε', '?'):
+        if new_cfg.remaining_input:
+            new_cfg.consume_input()
+
+    if transition.pop not in ('ε', '?'):
+        try:
+            new_cfg.stack.pop()
+        except IndexError:
+            pass
+
+    if transition.push:
+        new_cfg.stack.push(tuple(transition.push))
+
+    push_str = "".join(transition.push) if transition.push else "ε"
+    new_cfg.add_history(f"{transition.from_state}->{transition.to_state} [read:{transition.read} pop:{transition.pop} push:{push_str}]")
+    return new_cfg
+
+def _natural_sort_key_state(s: str):
+    # Ordenação natural: q0, q1, q10 ...
+    m = re.match(r'([^\d]*)(\d+)$', s)
+    if m:
+        return (m.group(1), int(m.group(2)))
+    return (s, 0)
+
+def _is_accepting_cfg(cfg: PDAConfig, automaton: Automaton, acceptance_mode: str) -> bool:
+    """
+    Critério de aceitação:
+      - 'final_state' : aceita se o estado atual for final (IGNORA remaining_input).
+      - 'empty_stack'  : aceita somente se remaining_input estiver vazia e pilha vazia (ou apenas símbolo inicial).
+    """
+    if acceptance_mode == "final_state":
+        return cfg.state in automaton.final_states
+    elif acceptance_mode == "empty_stack":
+        # requer fita vazia e pilha vazia (ou apenas symbol inicial)
+        if not cfg.is_input_empty():
+            return False
+        if cfg.stack.is_empty():
+            return True
+        if automaton.initial_stack_symbol is not None and len(cfg.stack) == 1 and cfg.stack.peek() == automaton.initial_stack_symbol:
+            return True
+        return False
+    else:
+        raise ValueError("acceptance_mode must be 'final_state' or 'empty_stack'")
+
+def simulate_step(cfg: PDAConfig, automaton: Automaton) -> List[PDAConfig]:
+    """
+    Retorna todas as configurações resultantes de aplicar *uma* transição
+    a partir de cfg, com a restrição de que só são permitidas transições
+    que vão para o mesmo estado (self-loop) ou para um estado 'à frente'
+    na ordem natural dos estados.
+    """
+    # cria ordering map (estado -> índice) usando ordenação natural
+    try:
+        ordered_states = sorted(list(automaton.states), key=_natural_sort_key_state)
+    except Exception:
+        ordered_states = sorted(list(automaton.states))
+    order_map = {s: i for i, s in enumerate(ordered_states)}
+
+    # transições do estado (embaralhadas para evitar vieses)
+    trans_list = list(automaton.get_transitions_from(cfg.state))
+    random.shuffle(trans_list)
+
+    # determina índice do estado atual; se não existir na lista, assume 0
+    cur_idx = order_map.get(cfg.state, 0)
+
+    nexts: List[PDAConfig] = []
+    for t in trans_list:
+        # Se o destino não estiver no mapa, permitir (fallback), mas evitar 'voltar' se possível
+        to_idx = order_map.get(t.to_state, None)
+        # Regras de aceitação da transição conforme semântica (ε/?/símbolo) e top da pilha
+        # Primeiro, aplique checagens de guardas (mesma lógica anterior)
+        if not _is_transition_applicable(t, cfg, automaton):
             continue
 
-        # Aplicar a transição criando uma nova configuração
-        new_config = _apply_transition(config, transition)
-        next_configs.append(new_config)
+        # Agora aplique a restrição de "forward-only":
+        # permitimos se: to_idx is None (desconhecido), or to_idx >= cur_idx (mesmo ou à frente)
+        if to_idx is not None and to_idx < cur_idx:
+            continue
 
-    return next_configs
+        # Se passou no teste, aplique a transição
+        nexts.append(_apply_transition(cfg, t))
 
+    return nexts
 
-def _is_transition_applicable(
-        transition: Transition,
-        current_input: Optional[str],
-        stack_top: Optional[str]
-) -> bool:
-    """Verifica se uma transição pode ser aplicada no contexto atual.
-
-    Args:
-        transition: Transição a verificar
-        current_input: Símbolo atual da entrada (None se entrada vazia)
-        stack_top: Topo da pilha (None se pilha vazia)
-
-    Returns:
-        True se a transição pode ser aplicada, False caso contrário
+def _prune(configs: List[PDAConfig], automaton: Automaton, max_configs:int) -> List[PDAConfig]:
     """
-    # Verificar símbolo de leitura
-    if transition.read == 'ε':
-        # Transição epsilon não consome entrada (sempre OK quanto à entrada)
-        pass
-    elif transition.read == '?' and current_input is None:
-        pass
-    elif current_input is None:
-        # Transição requer leitura mas não há entrada
-        return False
-    elif transition.read != current_input:
-        # Símbolo lido não corresponde ao esperado
-        return False
-
-    # Verificar topo da pilha
-    if transition.pop == 'ε':
-        # Transição não requer pop (sempre OK quanto à pilha)
-        pass
-    elif transition.pop == '?' and stack_top is None:
-        pass
-    elif stack_top is None:
-        # Transição requer pop mas pilha está vazia
-        return False
-    elif transition.pop != stack_top:
-        # Topo da pilha não corresponde ao esperado
-        return False
-
-    return True
-
-
-def _apply_transition(config: PDAConfig, transition: Transition) -> PDAConfig:
-    """Aplica uma transição a uma configuração, criando nova configuração.
-
-    Args:
-        config: Configuração original
-        transition: Transição a aplicar
-
-    Returns:
-        Nova configuração resultante da aplicação da transição
+    Prune heurístico: prioriza configurações que estão mais perto de aceitar:
+      1) estado final
+      2) menor input restante
+      3) menor tamanho de pilha (preferir desempilhar)
+    Limita a `max_configs`.
     """
-    # Copiar configuração para não modificar a original
-    new_config = config.copy()
+    def score(c:PDAConfig):
+        in_final = 1 if c.state in automaton.final_states else 0
+        rem = -len(c.remaining_input)
+        stack_sz = -len(c.stack)
+        return (in_final, rem, stack_sz)
+    sortedc = sorted(configs, key=score, reverse=True)
+    return sortedc[:max_configs]
 
-    # Atualizar estado
-    new_config.state = transition.to_state
-
-    # Consumir entrada se necessário
-    if not transition.read in ['ε', '?']:
-        new_config.consume_input()
-
-    # Fazer pop da pilha se necessário
-    if transition.pop != 'ε':
-        popped = new_config.stack.pop()
-    else:
-        popped = None
-
-    # Fazer push na pilha se necessário
-    if transition.push:  # Se não for tupla vazia
-        new_config.stack.push(transition.push)
-
-    # Adicionar ao histórico
-    read_str = transition.read
-    pop_str = transition.pop
-    push_str = ','.join(transition.push) if transition.push else 'ε'
-
-    history_entry = (
-        f"{transition.from_state} → {transition.to_state} "
-        f"[read: {read_str}, pop: {pop_str}, push: {push_str}]"
-    )
-    new_config.add_history(history_entry)
-
-    return new_config
-
-
-def stepwise_run(
-        automaton: Automaton,
-        input_string: str,
-        mode: str = "step",
-        max_steps: Optional[int] = None,
-        max_configs: int = DEFAULT_MAX_CONFIGS
-) -> Iterator[list[PDAConfig]]:
-    """Executa o autômato passo-a-passo, mantendo frontier de configurações.
-
-    Em cada iteração, retorna snapshots de todas as configurações ativas
-    para renderização. Suporta exploração completa do espaço não-determinístico.
-
-    Args:
-        automaton: Autômato a simular
-        input_string: String de entrada
-        mode: "step" (manual) ou "auto" (automático)
-        max_steps: Limite de passos (None = usar default)
-        max_configs: Limite de configurações simultâneas na frontier
-
-    Yields:
-        Lista de configurações ativas em cada passo
-
-    Raises:
-        RuntimeError: Se o limite de passos ou configurações for excedido
+def stepwise_run(automaton: Automaton, input_string: str, mode: str = "step",
+                 max_steps: Optional[int]=None, max_configs:int=DEFAULT_MAX_CONFIGS,
+                 max_visits_per_signature:int=DEFAULT_MAX_VISITS_PER_SIGNATURE,
+                 acceptance_mode: str = "final_state") -> Iterator[List[PDAConfig]]:
+    """
+    Iterador que gera a frontier (lista de configurações) a cada passo.
+    Para 'final_state' agora aceitamos imediatamente se ANY configuração estiver em estado final,
+    independentemente de ainda haver fita restante.
     """
     if max_steps is None:
         max_steps = DEFAULT_MAX_STEPS
 
-    # Criar configuração inicial
+    # inicializa pilha
     initial_stack = Stack()
-    # Nota: Muitos PDAs assumem um símbolo inicial na pilha (ex: Z0)
-    # mas isso deve ser configurado no loader/parser do YAML
+    if automaton.initial_stack_symbol:
+        initial_stack.push((automaton.initial_stack_symbol,))
 
-    initial_config = PDAConfig(
-        state=automaton.initial_state,
-        remaining_input=list(input_string),
-        stack=initial_stack,
-        history=["Configuração inicial"]
-    )
+    initial_cfg = PDAConfig(state=automaton.initial_state, remaining_input=list(input_string), stack=initial_stack, history=["start"])
+    frontier = [initial_cfg]
 
-    # Frontier de configurações ativas
-    frontier = [initial_config]
-    step_count = 0
+    # visit-counts para assinaturas
+    visit_counts: Dict[Tuple[str,Tuple[str,...],Tuple[str,...]], int] = {}
+    visit_counts[_signature_of_config(initial_cfg)] = 1
 
-    # Yield configuração inicial
+    # se a configuração inicial já é aceitante, yield e pare
+    if any(_is_accepting_cfg(c, automaton, acceptance_mode) for c in frontier):
+        yield frontier.copy()
+        return
+
+    step = 0
     yield frontier.copy()
 
-    # Executar até frontier vazia ou atingir limite
     while frontier:
-        step_count += 1
+        step += 1
+        if step > max_steps:
+            raise RuntimeError("max steps exceeded")
 
-        if step_count > max_steps:
-            raise RuntimeError(
-                f"Limite de passos excedido ({max_steps}). "
-                f"Possível loop infinito ou entrada muito complexa."
-            )
+        if mode == "rand":
+            # random-walk: escolha aleatória de configuração e de transição aplicável
+            cfg = random.choice(frontier)
+            nexts = simulate_step(cfg, automaton)
+            if not nexts:
+                # dead-end -> remove essa config da frontier
+                frontier = [c for c in frontier if c is not cfg]
+                # checar aceitação
+                if any(_is_accepting_cfg(c, automaton, acceptance_mode) for c in frontier):
+                    yield frontier.copy()
+                    return
+                yield frontier.copy()
+                continue
+            chosen = random.choice(nexts)
+            sig = _signature_of_config(chosen)
+            cnt = visit_counts.get(sig, 0)
+            if cnt >= max_visits_per_signature:
+                frontier = [c for c in frontier if c is not cfg]
+                if any(_is_accepting_cfg(c, automaton, acceptance_mode) for c in frontier):
+                    yield frontier.copy()
+                    return
+                yield frontier.copy()
+                continue
+            visit_counts[sig] = cnt + 1
+            frontier = [chosen]
+            # se a nova configuração for aceitante, yield e pare
+            if any(_is_accepting_cfg(c, automaton, acceptance_mode) for c in frontier):
+                yield frontier.copy()
+                return
+            yield frontier.copy()
+            continue
 
-        # Aplicar todas as transições possíveis a todas as configurações
-        next_frontier = []
-        for config in frontier:
-            next_configs = simulate_step(config, automaton)
-            next_frontier.extend(next_configs)
+        # modos 'auto' e 'step' (expansão em largura)
+        next_frontier: List[PDAConfig] = []
+        for cfg in frontier:
+            nexts = simulate_step(cfg, automaton)
+            for ncfg in nexts:
+                sig = _signature_of_config(ncfg)
+                cnt = visit_counts.get(sig, 0)
+                if cnt >= max_visits_per_signature:
+                    continue
+                visit_counts[sig] = cnt + 1
+                next_frontier.append(ncfg)
 
-        # Verificar explosão do espaço de busca
+        # prune se estourou configs
         if len(next_frontier) > max_configs:
-            # Aplicar poda: manter apenas as configurações mais promissoras
-            next_frontier = _prune_configurations(
-                next_frontier,
-                automaton,
-                max_configs
-            )
+            next_frontier = _prune(next_frontier, automaton, max_configs)
+
+        # se qualquer configuração de next_frontier for aceitante -> yield e pare
+        if any(_is_accepting_cfg(c, automaton, acceptance_mode) for c in next_frontier):
+            frontier = next_frontier
+            yield frontier.copy()
+            return
 
         frontier = next_frontier
-
-        # Se não há mais configurações, terminar
-        if not frontier:
-            break
-
-        # Yield frontier atual
-        yield frontier.copy()
+        if frontier:
+            yield frontier.copy()
 
 
-def _prune_configurations(
-        configs: list[PDAConfig],
-        automaton: Automaton,
-        max_configs: int
-) -> list[PDAConfig]:
-    """Aplica heurística para reduzir o número de configurações.
-
-    Heurísticas aplicadas (em ordem de prioridade):
-    1. Preferir configurações em estados finais
-    2. Preferir configurações com menos entrada restante
-    3. Preferir configurações com pilha menor
-
-    Args:
-        configs: Lista de configurações a podar
-        automaton: Autômato (para verificar estados finais)
-        max_configs: Número máximo de configurações a manter
-
-    Returns:
-        Lista podada de configurações
+def accepts(automaton: Automaton, input_string: str, max_steps: Optional[int]=None,
+            acceptance_mode: str="final_state", max_visits_per_signature:int=DEFAULT_MAX_VISITS_PER_SIGNATURE) -> Tuple[bool, Optional[List[str]]]:
     """
-    def score_config(config: PDAConfig) -> tuple:
-        """Calcula score para ordenação (maior é melhor)."""
-        in_final_state = 1 if config.state in automaton.final_states else 0
-        input_consumed = -len(config.remaining_input)  # Menos é melhor
-        stack_size = -len(config.stack)  # Menor é melhor
-        return (in_final_state, input_consumed, stack_size)
-
-    # Ordenar por score e pegar os melhores
-    sorted_configs = sorted(configs, key=score_config, reverse=True)
-    return sorted_configs[:max_configs]
-
-
-def accepts(
-        automaton: Automaton,
-        input_string: str,
-        max_steps: Optional[int] = None,
-        acceptance_mode: str = "final_state"
-) -> tuple[bool, Optional[list[str]]]:
-    """Verifica se o autômato aceita a string de entrada.
-
-    Executa a simulação completa e retorna se a string foi aceita,
-    junto com o trace de uma execução aceita (se existir).
-
-    Args:
-        automaton: Autômato a verificar
-        input_string: String de entrada
-        max_steps: Limite de passos (None = usar default)
-        acceptance_mode: "final_state" (aceita em estado final com entrada vazia)
-                        ou "empty_stack" (aceita com pilha vazia)
-
-    Returns:
-        Tupla (aceito, trace) onde:
-        - aceito: True se a string é aceita, False caso contrário
-        - trace: Lista de descrições das transições do caminho aceito,
-                 ou None se não foi aceita
-
-    Raises:
-        RuntimeError: Se o limite de passos for excedido
-        ValueError: Se acceptance_mode for inválido
+    Verifica aceitação por BFS (explora até encontrar aceitação ou exaurir).
+    'final_state' aceita assim que qualquer configuração estiver em estado final (independente da fita).
     """
-    if acceptance_mode not in ("final_state", "empty_stack"):
-        raise ValueError(
-            f"acceptance_mode inválido: {acceptance_mode}. "
-            f"Use 'final_state' ou 'empty_stack'."
-        )
+    if acceptance_mode not in ("final_state","empty_stack"):
+        raise ValueError("acceptance_mode must be 'final_state' or 'empty_stack'")
 
     if max_steps is None:
         max_steps = DEFAULT_MAX_STEPS
 
-    # Criar configuração inicial
     initial_stack = Stack()
-    initial_config = PDAConfig(
-        state=automaton.initial_state,
-        remaining_input=list(input_string),
-        stack=initial_stack,
-        history=["Início da execução"]
-    )
+    if automaton.initial_stack_symbol:
+        initial_stack.push((automaton.initial_stack_symbol,))
 
-    frontier = [initial_config]
-    step_count = 0
+    initial_cfg = PDAConfig(state=automaton.initial_state, remaining_input=list(input_string), stack=initial_stack, history=["start"])
+    frontier = [initial_cfg]
+    visit_counts: Dict[Tuple[str,Tuple[str,...],Tuple[str,...]], int] = { _signature_of_config(initial_cfg): 1 }
 
+    step = 0
     while frontier:
-        step_count += 1
+        step += 1
+        if step > max_steps:
+            raise RuntimeError("max steps exceeded")
 
-        if step_count > max_steps:
-            raise RuntimeError(
-                f"Limite de passos excedido ({max_steps}). "
-                f"Possível loop infinito."
-            )
+        for cfg in frontier:
+            if _is_accepting_cfg(cfg, automaton, acceptance_mode):
+                return True, cfg.history
 
-        # Verificar se alguma configuração atual é aceita
-        for config in frontier:
-            if _is_accepting_configuration(config, automaton, acceptance_mode):
-                return True, config.history
+        next_frontier=[]
+        for cfg in frontier:
+            next_frontier.extend(simulate_step(cfg, automaton))
 
-        # Expandir frontier
-        next_frontier = []
-        for config in frontier:
-            next_configs = simulate_step(config, automaton)
-            next_frontier.extend(next_configs)
+        filtered = []
+        for ncfg in next_frontier:
+            sig = _signature_of_config(ncfg)
+            cnt = visit_counts.get(sig, 0)
+            if cnt >= max_visits_per_signature:
+                continue
+            visit_counts[sig] = cnt + 1
+            filtered.append(ncfg)
+        frontier = filtered
 
-        # Aplicar poda se necessário
-        if len(next_frontier) > DEFAULT_MAX_CONFIGS:
-            next_frontier = _prune_configurations(
-                next_frontier,
-                automaton,
-                DEFAULT_MAX_CONFIGS
-            )
-
-        frontier = next_frontier
-
-    # Não encontrou configuração aceita
     return False, None
-
-
-def _is_accepting_configuration(
-        config: PDAConfig,
-        automaton: Automaton,
-        acceptance_mode: str
-) -> bool:
-    """Verifica se uma configuração é aceita.
-
-    Args:
-        config: Configuração a verificar
-        automaton: Autômato
-        acceptance_mode: "final_state" ou "empty_stack"
-
-    Returns:
-        True se a configuração é aceita, False caso contrário
-    """
-    # Entrada deve estar completamente consumida
-    if not config.is_input_empty():
-        return False
-
-    if acceptance_mode == "final_state":
-        # Aceita se está em estado final
-        return config.state in automaton.final_states
-    else:  # empty_stack
-        # Aceita se a pilha está vazia
-        return config.stack.is_empty()
